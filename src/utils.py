@@ -243,7 +243,13 @@ def build_dashboard(q, prev_q=None, test=None, wait_time_slo=15, latency_slo=30,
     db.add_row(titles, "domain", figures)
     
     # Build dataframe of current simulation
+    
     df_q = build_df(q, test)
+    max_test = test['ds'].iloc[12*24]
+    if prev_q is not None:
+        df_pq = build_df(prev_q, test)
+        max_test = min(max_test, df_pq['date'].max())
+    df_q = df_q.query("date < @max_test")
 
     # Make latency histogram
     h1, top_y_lat = make_histogram(df_q[(df_q['exit_date'] > df_q['arrival_date'])]['latency'].values, "Current", CUR_COLOR, nbins=20, bingroup=1, nbinsx=20)
@@ -270,7 +276,9 @@ def build_dashboard(q, prev_q=None, test=None, wait_time_slo=15, latency_slo=30,
     
     if prev_q is not None:
         # If we have a previous q object, then do the same with that using the PREV_COLOR to differentiate
-        df_pq = build_df(prev_q, test)
+        #max_test = test['ds'].iloc[-1]
+        df_pq = df_pq.query("date < @max_test")
+
         ph1, top_y_lat_prev = make_histogram(df_pq[(df_pq['exit_date'] > df_pq['arrival_date'])]['latency'].values, "Prev", PREV_COLOR, nbins=20, bingroup=1, nbinsx=20)
         db.insert_figure(row=2, col=1, figure=ph1)
         
@@ -348,3 +356,42 @@ class ServiceDistribution(ciw.dists.Distribution):
             total_time += self.time_to_report.sample()
 
         return total_time   
+
+    
+def split_train_test(filename, freq, test_size, add_trend=False):
+    df = pd.read_csv(filename, parse_dates=['Created At'])
+    df.columns = ['month', 'created_at']
+    arr_times_df = df.groupby(pd.Grouper(key='created_at', freq=freq)).count().reset_index()
+    arr_times_df.columns = ['ds', 'y']
+    #arr_times_df['y'] /= 5
+    arr_times_df['ds'] = arr_times_df['ds'].dt.tz_localize(None)
+    arr_times_df.insert(0, 'unique_id', 'arrivals')
+    arr_times_df = arr_times_df.query('ds >= "2020-01-01"').reset_index(drop=True)
+    assert len(arr_times_df['ds']) == len(pd.date_range(arr_times_df['ds'].iloc[0], arr_times_df['ds'].iloc[-1], freq=freq))
+    if add_trend:
+        arr_times_df['y'] = arr_times_df['y'] + np.random.uniform(size=len(arr_times_df), high=0.001).cumsum().round()
+    test = arr_times_df.tail(test_size)
+    train = arr_times_df.drop(test.index)
+    return train, test
+
+def evaluate_future(df, metrics, target_col='y'):
+    eval_ = {}
+    models = df.loc[:, ~df.columns.str.contains('unique_id|y|ds|cutoff|lo|hi')].columns
+    for model in models:
+        eval_[model] = {}
+        for metric in metrics:
+            eval_[model][metric.__name__] = metric(df[target_col], df[model])
+    eval_df = pd.DataFrame(eval_).rename_axis('metric').reset_index()
+    if 'unique_id' in df.columns:
+        eval_df.insert(0, 'unique_id', df['unique_id'].iloc[0])
+    return eval_df
+
+def get_forecasts_from_simulation(q, test, name):
+    fcst_simulation = build_df(q, test).set_index('date').resample('5T').count()
+    fcst_simulation = fcst_simulation.reset_index().rename(columns={'date': 'ds', 'exit_date': name})
+    return fcst_simulation[['ds', name]]
+
+def get_latency_from_simulation(q, test, name):
+    lat_simulation = build_df(q, test).set_index('date').resample('5T').sum()
+    lat_simulation = lat_simulation.reset_index().rename(columns={'date': 'ds', 'latency': name})
+    return lat_simulation[['ds', name]]
