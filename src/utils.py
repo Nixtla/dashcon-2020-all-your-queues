@@ -182,7 +182,7 @@ class Dashboard(object):
                        height=900, width=800,
                        title={ 'text': self.title,
                        'y':0.98, 'x':0.5, 'xanchor': 'center',
-                       'font': {'size': 20}, 'yanchor': 'top'},yaxis3=dict(range=[0, 40]))
+                       'font': {'size': 20}, 'yanchor': 'top'},yaxis3=dict(rangemode='tozero'))
 
         
         
