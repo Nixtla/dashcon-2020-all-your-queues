@@ -1,0 +1,14 @@
+name: queues-forecast
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - jupyterlab
+  - matplotlib
+  - pandas>=1.3.5
+  - seaborn
+  - statsforecast
+  - pip:
+    - datasetsforecast
+    - ciw
+    - chart_studio
